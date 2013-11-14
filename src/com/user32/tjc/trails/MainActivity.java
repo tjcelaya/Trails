@@ -1,13 +1,22 @@
 package com.user32.tjc.trails;
 
 
+import java.util.ArrayList;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Map;
+
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.GoogleMap.OnInfoWindowClickListener;
+import com.google.android.gms.maps.GoogleMap.OnMapLoadedCallback;
+import com.google.android.gms.maps.GoogleMap.OnMarkerClickListener;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.*;
 
@@ -17,27 +26,42 @@ import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.opengl.Visibility;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.util.Log;
+import android.view.View;
+import android.widget.Toast;
 
-public class MainActivity extends FragmentActivity implements LocationListener {
+public class MainActivity 
+	extends FragmentActivity 
+	implements LocationListener {
 
-		private GoogleMap map;
-		private double currentLat;
-		private double currentLng;
+		public static GoogleMap map;
+		private double currentLat = Double.NaN;
+		private double currentLng = Double.NaN;
 		private LatLng loveBldgLocation;
-		private boolean markerSet;
+		private boolean markerSet = false;
+		private boolean mapLoaded = false;
+		private static final String TAG = "APPNAME";
+		private Map<LatLng, String> startPoints;
+		private boolean initialZoomDone = false;
+		private float currentZoom;
+		private boolean tracking = false;
+		public static boolean startPicked = false;
 		
 		@Override
 		protected void onCreate(Bundle savedInstanceState) {
 	        super.onCreate(savedInstanceState);
 	        setContentView(R.layout.activity_main);
 	        
-	        loveBldgLocation = new LatLng(30.4461,-84.2993);
-	        markerSet = false;
+	        startPoints = new HashMap<LatLng, String>();
+	        startPoints.put(new LatLng(30.44527,-84.302394), "A");
+	        startPoints.put(new LatLng(30.442692,-84.298343), "B");
+	        startPoints.put(new LatLng(30.4461,-84.2993), "C");
 	        
+	        currentZoom = 15;
 	        // Getting Google Play availability status
 	        int status = GooglePlayServicesUtil.isGooglePlayServicesAvailable(getBaseContext());
 
@@ -55,91 +79,61 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 
 	            // Getting GoogleMap object from the fragment
 	            map = fm.getMap();
-
+	            
+	            map.setOnMapLoadedCallback(new OnMapLoadedCallback() {
+					@Override
+					public void onMapLoaded() {
+						Log.e(TAG, "onMapLoaded");
+						mapLoaded = true;
+					}
+				});
+	            
 	            // Enabling MyLocation Layer of Google Map
 	            map.setMyLocationEnabled(true);
 
 	            // Getting LocationManager object from System Service LOCATION_SERVICE
 	            LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-
 	            // Creating a criteria object to retrieve provider
 	            Criteria criteria = new Criteria();
-
 	            // Getting the name of the best provider
 	            String provider = locationManager.getBestProvider(criteria, true);
-
 	            // Getting Current Location
 	            Location location = locationManager.getLastKnownLocation(provider);
 
-	            if(location!=null){
-	                onLocationChanged(location);
+	            if(location != null){
+	            	map.animateCamera(
+			        		CameraUpdateFactory.newLatLngZoom(
+			        				new LatLng(location.getLatitude(), location.getLongitude()), 
+			        				18));
 	            }
 	            
-	        	Log.w("Trails", "made it to check");
-
-	            
-	            
-		        if (markerSet == false) {
-		        	Log.w("Trails", "setting marker since we haven't");
-		            map.addMarker(new MarkerOptions()
-			            .position(loveBldgLocation)
-			            .title("Love!"));
-		            markerSet = true;
-		        }
-	            
-	            locationManager.requestLocationUpdates(provider, 20000, 0, this);
-	            
-		        map.moveCamera(CameraUpdateFactory.newLatLng(loveBldgLocation));
-
-		        map.animateCamera(CameraUpdateFactory.zoomTo(15));
-		        
-				new DelayedZoom().execute();
+	            locationManager.requestLocationUpdates(provider, 3000, 0, this);
 
 	        }
+	        
 	    }
-		
-		private class DelayedZoom extends AsyncTask<Void, Void, Void> {
-		
-		    @Override
-		    protected Void doInBackground(Void... v) {
-	                try {
-	                    Thread.sleep(1000);
-	                } catch (InterruptedException e) {
-	                    // TODO Auto-generated catch block
-	                    e.printStackTrace();
-	                }
-	                return null;
-		    }        
-		
-		    @Override
-		    protected void onPostExecute(Void v) {             
-		    }
-		
-		}
-		
+
 	    @Override
 	    public void onLocationChanged(Location location) {
 
-	        // Getting latitude of the current location
-	        currentLat = location.getLatitude();
+	    	
+	    	Log.w(TAG, "onLocationChanged");
 
-	        // Getting longitude of the current location
-	        currentLng = location.getLongitude();
+	    	if (mapLoaded == false) {
+		    	Log.w(TAG, "Uh oh, map not loaded!");
+	    		return;
+	    		
+	    	}
 
-	        // Creating a LatLng object for the current location
-	        LatLng latLng = new LatLng(currentLat, currentLng);
+	    	//Get location
+	    	currentLat = location.getLatitude();
+	    	currentLng = location.getLongitude();
 
-	        // Showing the current location in Google Map
-
-	        LatLngBounds bounds = new LatLngBounds.Builder()
-	        	.include(latLng)
-	        	.include(loveBldgLocation)
-	        	.build();
+	    	Log.w(TAG, "Tracking!");
+	        // Showing the current location in GoogleMap
 	        
-	        map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 20));
-	        
-	        // Zoom in the Google Map
-	        map.animateCamera(CameraUpdateFactory.zoomTo(15));
+	    	if (startPicked  == true)
+	    		map.animateCamera(CameraUpdateFactory.newLatLng(new LatLng(currentLat, currentLng)));
 	    }
 	    
 
