@@ -113,6 +113,50 @@ public class MainActivity
 	        
 	    }
 
+		public void selectJourney(View v) {
+			
+            LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+            String provider = locationManager.getBestProvider(new Criteria(), true);
+            Location location = locationManager.getLastKnownLocation(provider);
+
+			if (location != null)
+				onLocationChanged(location);
+			
+			if (Double.isNaN(currentLat) || Double.isNaN(currentLng)) {
+		    	Log.w(TAG, "I don't know where you are yet...");
+				return;
+			}
+
+			((View) findViewById(R.id.title_overlay)).setVisibility(View.GONE);
+			
+			LatLngBounds.Builder b = new LatLngBounds.Builder();
+			b.include(new LatLng(currentLat, currentLng));
+			
+			for (LatLng p : startPoints.keySet()) {
+				b.include(p);
+				map.addMarker(new MarkerOptions()
+						.position(p)
+						.title(startPoints.get(p)));
+			}
+			
+			map.animateCamera(CameraUpdateFactory.newLatLngBounds(b.build(), 100));
+
+			map.setOnInfoWindowClickListener(new OnInfoWindowClickListener() {
+				
+				@Override
+				public void onInfoWindowClick(Marker arg0) {
+					MainActivity.startPicked = true;
+
+					LatLng redrawPosition = arg0.getPosition();
+					MainActivity.map.clear();
+					
+					MainActivity.map.addMarker(new MarkerOptions()
+							.position(redrawPosition));
+				}
+			});
+			
+		}
+		
 	    @Override
 	    public void onLocationChanged(Location location) {
 
