@@ -19,14 +19,16 @@
 	    android:layout_height="match_parent"
 		android:layout_width="match_parent"
 		android:gravity="center"
+		android:weightSum="5"
 		android:layout_alignParentTop="true"
 	    >
     	<ImageView 
 		    android:id="@+id/title_card"
-		    android:layout_height="wrap_content"
+		    android:layout_height="0dp"
 		    android:layout_width="match_parent"
 	    	android:adjustViewBounds="true"
 		    android:scaleType="fitCenter"
+			android:layout_weight="4"
 		    android:contentDescription="Title Card"
 		    android:src="@drawable/title_card"
 		    />
@@ -34,16 +36,37 @@
 		    android:id="@+id/adventure_mode_button"
 		    android:layout_height="wrap_content"
 		    android:layout_width="wrap_content"
+			android:alpha="1"
 		    android:text="Adventure!"
 		    android:onClick="selectJourney"
+		    android:background="@android:drawable/btn_default"
 		    />
 		<Button 
 		    android:id="@+id/pioneer_mode_button"
 		    android:layout_height="wrap_content"
 		    android:layout_width="wrap_content"
+			android:alpha="1"
 		    android:text="Pioneer!"
 		    android:onClick="createJourney"
+		    android:background="@android:drawable/btn_default"
 		    />
-		    
 	</LinearLayout>
+	<TextView 
+	    android:id="@+id/adventure_tip"
+	    android:layout_height="wrap_content"
+	    android:layout_width="wrap_content"
+	    android:layout_alignParentBottom="true"
+	    android:layout_centerHorizontal="true"
+	    android:text="Tap a marker and it's\nlabel to start a trail."
+	    android:visibility="invisible"
+	    />
+	<TextView 
+	    android:id="@+id/current_location"
+	    android:layout_height="wrap_content"
+	    android:layout_width="wrap_content"
+	    android:layout_alignParentBottom="true"
+	    android:layout_centerHorizontal="true"
+	    android:text=""
+	    android:visibility="invisible"
+	    />
 </RelativeLayout>
