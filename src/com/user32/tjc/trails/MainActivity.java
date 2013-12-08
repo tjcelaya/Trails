@@ -26,19 +26,26 @@ import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.ProgressDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
 import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.opengl.Visibility;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.support.v4.app.FragmentActivity;
 import android.util.Log;
 import android.view.View;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity 
@@ -51,11 +58,13 @@ public class MainActivity
 		public static final String TAG = "APPNAME";
 		public static Map<String, TupleArray<String, String>> trailnames_to_trails;
 		public static TupleArray<Location, String> current_route;
+		public static ProgressDialog gettingLocationDialog = null;
+		public static LocationManager location_manager = null;
 		public static int last_visited = -1;
 		public static Location current_location = null;
 		public static Location next_location = null;
-		public LatLng current_latlng = null;
-		public LatLng next_latlng = null;
+		public static LatLng current_latlng = null;
+		public static LatLng next_latlng = null;
 		public static float next_point_alpha = 0;
 		public static float distance = 0;
 		public static double currentLat = Double.NaN;
@@ -67,6 +76,7 @@ public class MainActivity
 		public static boolean finished_trail = false;
 		public static boolean started = false;
 		public static boolean picking = false;
+		public static boolean got_fix = false;
 		public static boolean pause_map_animation = false;
 		
 		@Override
@@ -83,6 +93,8 @@ public class MainActivity
 	        // Getting Google Play availability status
 	        int status = GooglePlayServicesUtil.isGooglePlayServicesAvailable(getBaseContext());
 
+	        
+	        
 	        // Showing status
 	        if(status != ConnectionResult.SUCCESS){ // Google Play Services are not available
 	            int requestCode = 10;
@@ -109,19 +121,25 @@ public class MainActivity
 	            map.setMyLocationEnabled(true);
 
 	            // Getting LocationManager object from System Service LOCATION_SERVICE
-	            LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-	            // Creating a criteria object to retrieve provider
-	            Criteria criteria = new Criteria();
-	            // Getting the name of the best provider
-	            String provider = locationManager.getBestProvider(criteria, true);
+	            location_manager = (LocationManager) getSystemService(LOCATION_SERVICE);
+	            
+	            
+	            if (!location_manager.isProviderEnabled(LocationManager.GPS_PROVIDER)){
+	                showGPSDisabledAlertToUser();
+	            }
+
 	            // Getting Current Location
-	            Location location = locationManager.getLastKnownLocation(provider);
+	            Location location = location_manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
 
 	            if(location != null){
-	            	map.moveCamera(
-		        		CameraUpdateFactory.newLatLngZoom(
-	        				new LatLng(location.getLatitude(), location.getLongitude()), 
-	        				14));
+		            	map.moveCamera(
+			        		CameraUpdateFactory.newLatLngZoom(
+		        				new LatLng(location.getLatitude(), location.getLongitude()), 
+		        				14));
+			    		got_fix = true;
+			    		((ProgressBar) findViewById(R.id.waiting_spin)).setVisibility(View.GONE);
+			    		findViewById(R.id.adventure_mode_button).setVisibility(View.VISIBLE);
+			    		findViewById(R.id.pioneer_mode_button).setVisibility(View.VISIBLE);
 	            }
 
 	            RequestTrails r = new RequestTrails();
@@ -131,7 +149,8 @@ public class MainActivity
 	            else
 	                r.execute();
  
-	            locationManager.requestLocationUpdates(provider, 2000, 0, this);
+	            location_manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 0, this);
+
 	        }
 	    }
 
@@ -190,9 +209,8 @@ public class MainActivity
 		
 		public void selectJourney(View v) {
 			
-            LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-            String provider = locationManager.getBestProvider(new Criteria(), true);
-            current_location = locationManager.getLastKnownLocation(provider);
+            String provider = location_manager.getBestProvider(new Criteria(), true);
+            current_location = location_manager.getLastKnownLocation(provider);
 
 			if (current_location == null || map_loaded == false) {
 				//cant start yet, we're missing one
@@ -256,6 +274,7 @@ public class MainActivity
 				TupleArray<String, String> selectedRoute = trailnames_to_trails.get(params[0]);
 				String[] point = new String[2];
 				
+				current_route = new TupleArray<Location, String>();
 				//put parsed route into current_route
 				for (int i = 0, s = selectedRoute.k_list.size();
 						i < s;
@@ -282,13 +301,25 @@ public class MainActivity
 			
 			@Override
 			protected void onPostExecute(Integer error) {
-				if (error != null)
+				if (error != null) {
+					Toast.makeText(MainActivity.this, "There was an error starting: "+error, Toast.LENGTH_LONG).show();
 					return;
+				}
 				
+				Location l = location_manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
 				// draw first marker and exit
-				map.addMarker(new MarkerOptions()
-					.position(new LatLng(current_route.k_list.get(0).getLongitude(), current_route.k_list.get(0).getLongitude()))
-					.title(current_route.v_list.get(0)));
+				LatLngBounds bounds = LatLngBounds.builder()
+						.include(new LatLng(l.getLatitude(), l.getLongitude()))
+						.include(next_latlng)
+						.build();
+				map.clear();
+//				map.addCircle(new CircleOptions()
+//					.center(next_latlng)
+//					.radius(DETECT_DISTANCE)
+//					.strokeColor(Color.YELLOW));
+				map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100));
+				((TextView) findViewById(R.id.adventure_tip)).setVisibility(View.VISIBLE);
+				((TextView) findViewById(R.id.adventure_tip)).setText(current_route.v_list.get(0));
 			}
 			
 		}
@@ -296,7 +327,7 @@ public class MainActivity
 		// should only be called in the background (from RequestTrails)
 		public String[] attachFetchedRoutes(String json) {
 
-			Log.w(TAG+"attachFetchedRoutes", json);
+//			Log.w(TAG+"attachFetchedRoutes", json);
 			
 			JSONObject jsonObj;
 			String tempRoute;
@@ -309,8 +340,8 @@ public class MainActivity
 						route.hasNext();) {
 					String key = route.next();
 					
-					Log.w(TAG+"attachFetchedRoutes-K", key);	
-					Log.w(TAG+"attachFetchedRoutes-V", jsonObj.getString(key));	
+//					Log.w(TAG+"attachFetchedRoutes-K", key);	
+//					Log.w(TAG+"attachFetchedRoutes-V", jsonObj.getString(key));	
 					
 					tempRoute = jsonObj.getString(key);
 					
@@ -324,7 +355,7 @@ public class MainActivity
 					for (String i : items) {
 						String point_and_clue[] = i.split("\\|BREAK_P\\|");
 						
-						Log.e(TAG+"split", point_and_clue[0] + " = " + point_and_clue[1]);
+//						Log.e(TAG+"split", point_and_clue[0] + " = " + point_and_clue[1]);
 						
 						route_definition.k_list.add(point_and_clue[0]);
 						route_definition.v_list.add(point_and_clue[1]);
@@ -343,31 +374,38 @@ public class MainActivity
 			else
 				return null;
 				
-//			trailnames_to_trails.put(key, value)
 		}
 		
 	    @Override
 	    public void onLocationChanged(Location location) {
 
+	    	if (got_fix == false) {
+	    		got_fix = true;
+	    		((ProgressBar) findViewById(R.id.waiting_spin)).setVisibility(View.GONE);
+	    		findViewById(R.id.adventure_mode_button).setVisibility(View.VISIBLE);
+	    		findViewById(R.id.pioneer_mode_button).setVisibility(View.VISIBLE);
+	    	}
+	    	
 			if (map_loaded == false) {
-				Log.e(TAG+"onLocationChanged", "Uh oh, map not loaded!");
+//				Log.e(TAG+"onLocationChanged", "Uh oh, map not loaded!");
 				return;
 			} else if (finished_trail == true || pause_map_animation == true)
 				return;
+			
 
 			//Get location
 			// currentLat = location.getLatitude();
 			// currentLng = location.getLongitude();
 
-			Log.w(TAG+"onLocationChanged", "Tracking!");
+//			Log.w(TAG+"onLocationChanged", "Tracking!");
 			
 			if (started == true) {
 				
 				distance = location.distanceTo(next_location);
 				
-				Log.w(TAG+"onLocationChanged", "Started route, drawing next point");
-				Log.e(TAG+"closEnough", "distance: "+distance+" C("+CAPTURE_DISTANCE+")");
-				Log.e(TAG+"next", "l_v: "+last_visited+" F("+(current_route.size()-1)+")");
+//				Log.w(TAG+"onLocationChanged", "Started route, drawing next point");
+//				Log.e(TAG+"closEnough", "distance: "+distance+" C("+CAPTURE_DISTANCE+")");
+//				Log.e(TAG+"next", "l_v: "+last_visited+" F("+(current_route.size()-1)+")");
 
 				
 				//if captured final point, finish
@@ -383,7 +421,7 @@ public class MainActivity
 					
 					map.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
 					finished_trail = true;
-					Toast.makeText(this, "A WINRAR IS YOU", 1).show();
+					Toast.makeText(this, "A WINNER IS YOU", 1).show();
 					
 					return;
 
@@ -393,10 +431,18 @@ public class MainActivity
 					LatLng capturedPoint = new LatLng(next_location.getLatitude(), next_location.getLongitude());
 					map.addMarker(new MarkerOptions()
 							.position(capturedPoint)
-							.title(current_route.v_list.get(last_visited++)));
-					
-					next_location = current_route.k_list.get(last_visited);
+							.title(current_route.v_list.get(last_visited)));
+
+					next_location = current_route.k_list.get(++last_visited);
 					next_latlng = new LatLng(next_location.getLatitude(), next_location.getLongitude());
+					
+					((TextView) findViewById(R.id.adventure_tip)).setVisibility(View.VISIBLE);
+					((TextView) findViewById(R.id.adventure_tip)).setText(
+//							Integer.toString(last_visited) + 
+							current_route.v_list.get(last_visited));
+//					Toast.makeText(this, "Capture!", Toast.LENGTH_SHORT).show();
+					
+					return;
 
 				} else if (distance < DETECT_DISTANCE) {
 					next_point_alpha = (DETECT_DISTANCE - location.distanceTo(next_location)) / DETECT_DISTANCE;
@@ -405,44 +451,48 @@ public class MainActivity
 							.alpha(next_point_alpha)
 							.position(next_latlng));
 				
-					map.addCircle(new CircleOptions()
-						.center(next_latlng)
-						.radius(DETECT_DISTANCE)
-						.strokeColor(Color.YELLOW));
-					map.addCircle(new CircleOptions()
-						.center(next_latlng)
-						.radius(CAPTURE_DISTANCE)
-						.strokeColor(Color.RED));
+//					map.addCircle(new CircleOptions()
+//						.center(next_latlng)
+//						.radius(DETECT_DISTANCE)
+//						.strokeColor(Color.YELLOW));
+//					map.addCircle(new CircleOptions()
+//						.center(next_latlng)
+//						.radius(CAPTURE_DISTANCE)
+//						.strokeColor(Color.RED));
+//					Toast.makeText(this, "Detect!", Toast.LENGTH_SHORT).show();
 					
-				}
-				
-				
-				if (distance > DETECT_DISTANCE) {
+					return;
+				} else if (distance > DETECT_DISTANCE) {
 					LatLngBounds bounds = LatLngBounds.builder()
 							.include(new LatLng(location.getLatitude(), location.getLongitude()))
 							.include(next_latlng)
 							.build();
 					map.clear();
-					map.addCircle(new CircleOptions()
-						.center(next_latlng)
-						.radius(DETECT_DISTANCE)
-						.strokeColor(Color.YELLOW));
+//					map.addCircle(new CircleOptions()
+//						.center(next_latlng)
+//						.radius(DETECT_DISTANCE)
+//						.strokeColor(Color.YELLOW));
 					map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100));
+					return;
 				}
 			 	
 			} else if (picking == false && started == false) {
-				Log.w(TAG+"onLocationChanged", "still haven't started");
+//				Log.w(TAG+"onLocationChanged", "still haven't started");
 				map.animateCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
 			} else if (picking == true) {
-				Log.w(TAG+"onLocationChanged", "we are picking, dont move");
+//				Log.w(TAG+"onLocationChanged", "we are picking, dont move");
 			} else {
-				Log.e(TAG+"onLocationChanged", "some other condition occurred");
-				Log.e(TAG+"onLocationChanged", "started = "+started+" picking = "+picking);
+//				Log.e(TAG+"onLocationChanged", "some other condition occurred");
+//				Log.e(TAG+"onLocationChanged", "started = "+started+" picking = "+picking);
 			}
 	    }
 
 	    @Override
-	    public void onProviderDisabled(String provider) { }
+	    public void onProviderDisabled(String provider) { 
+	    		
+	    		showGPSDisabledAlertToUser(); 
+	    		
+	    }
 
 	    @Override
 	    public void onProviderEnabled(String provider) { }
@@ -450,10 +500,65 @@ public class MainActivity
 	    @Override
 	    public void onStatusChanged(String provider, int status, Bundle extras) { }
 	    
+	    private void showGPSDisabledAlertToUser(){
+	        AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(this);
+	        alertDialogBuilder.setMessage("Please enable GPS.")
+	        .setCancelable(false)
+	        .setPositiveButton("Open Location Settings",
+	                new DialogInterface.OnClickListener(){
+	            public void onClick(DialogInterface dialog, int id){
+	                Intent callGPSSettingIntent = new Intent(
+	                        android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+	                startActivity(callGPSSettingIntent);
+	            }
+	        });
+	        alertDialogBuilder.setNegativeButton("Cancel",
+	                new DialogInterface.OnClickListener(){
+	            public void onClick(DialogInterface dialog, int id){
+	                dialog.cancel();
+	            }
+	        });
+	        alertDialogBuilder.create().show();
+	    }
+	    
 	    public void createJourney(View v) {
 	    	
-	    	
-	    	Intent i = new Intent(this, PioneerMode.class);
-	    	startActivity(i);
+            location_manager.removeUpdates(this);
+		    	Intent i = new Intent(this, PioneerMode.class);
+		    	startActivityForResult(i, 1);
+	    }
+	    
+	    protected void onActivityResult(int req, int res, Intent data) {
+            
+            location_manager.requestLocationUpdates(location_manager.getBestProvider(new Criteria(), true), 4000, 0, this);
+		}
+	    
+	    @Override
+	    public void onBackPressed() {
+		    	if (picking) {
+		    		picking = false;
+
+		    		findViewById(R.id.title_overlay).setVisibility(View.VISIBLE);
+		    		findViewById(R.id.adventure_mode_button).setVisibility(View.VISIBLE);
+		    		findViewById(R.id.pioneer_mode_button).setVisibility(View.VISIBLE);
+		    		return;
+		    	} else if (started) {
+		    		picking = false;
+		    		started = false;
+		    		finished_trail = false;
+		    		findViewById(R.id.title_overlay).setVisibility(View.VISIBLE);
+		    		findViewById(R.id.adventure_mode_button).setVisibility(View.VISIBLE);
+		    		findViewById(R.id.pioneer_mode_button).setVisibility(View.VISIBLE);
+		    		
+		    		current_route = null;
+		    		map.clear();
+		    		map.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+		    		
+		    		return;
+		    	} else {
+		    		super.onBackPressed();
+		    	
+		    	}
+		    	
 	    }
 }
